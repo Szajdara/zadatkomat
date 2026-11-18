@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type {
   Booking,
@@ -25,8 +26,35 @@ import {
   sanitizeText,
 } from './security';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
+const globalForDb = globalThis as unknown as {
+  __zadatkomatMemDb?: DatabaseState;
+};
+
+function resolveDataDir(): string {
+  const isServerless = Boolean(
+    process.env.NETLIFY ||
+      process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      process.env.LAMBDA_TASK_ROOT ||
+      process.env.VERCEL
+  );
+  if (isServerless) {
+    return path.join(os.tmpdir(), 'zadatkomat-data');
+  }
+  const localDir = path.join(process.cwd(), 'data');
+  try {
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    return localDir;
+  } catch {
+    return path.join(os.tmpdir(), 'zadatkomat-data');
+  }
+}
+
+function getDbFilePath(): { dataDir: string; dbFile: string } {
+  const dataDir = resolveDataDir();
+  return { dataDir, dbFile: path.join(dataDir, 'db.json') };
+}
 
 export const PLATFORM_SERVICE_FEE = 4.9;
 export const STRIPE_BLIK_FEE_ESTIMATE = 2.4;
@@ -398,35 +426,55 @@ function normalizeDatabase(rawDb: DatabaseState): DatabaseState {
 }
 
 export function getDb(): DatabaseState {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(DB_FILE)) {
-    const seed = createSeedDatabase();
-    fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2), 'utf-8');
-    return seed;
-  }
+  const { dataDir, dbFile } = getDbFilePath();
   try {
-    const raw = fs.readFileSync(DB_FILE, 'utf-8');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    if (!fs.existsSync(dbFile)) {
+      const seed = globalForDb.__zadatkomatMemDb ?? createSeedDatabase();
+      globalForDb.__zadatkomatMemDb = seed;
+      try {
+        fs.writeFileSync(dbFile, JSON.stringify(seed, null, 2), 'utf-8');
+      } catch {
+        // Fallback purely to in-memory seed if filesystem is read-only
+      }
+      return seed;
+    }
+    const raw = fs.readFileSync(dbFile, 'utf-8');
     const parsed = JSON.parse(raw) as DatabaseState;
     if (!parsed.studios || !parsed.bookings || !parsed.waitlist) {
       throw new Error('Malformed db.json');
     }
-    return normalizeDatabase(parsed);
+    const normalized = normalizeDatabase(parsed);
+    globalForDb.__zadatkomatMemDb = normalized;
+    return normalized;
   } catch {
-    const seed = createSeedDatabase();
-    fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2), 'utf-8');
-    return seed;
+    const fallback = globalForDb.__zadatkomatMemDb ?? createSeedDatabase();
+    globalForDb.__zadatkomatMemDb = fallback;
+    try {
+      fs.mkdirSync(dataDir, { recursive: true });
+      fs.writeFileSync(dbFile, JSON.stringify(fallback, null, 2), 'utf-8');
+    } catch {
+      // Ignore write error on read-only serverless container
+    }
+    return fallback;
   }
 }
 
 export function saveDb(state: DatabaseState): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  globalForDb.__zadatkomatMemDb = state;
+  const { dataDir, dbFile } = getDbFilePath();
+  try {
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    const tmpFile = `${dbFile}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf-8');
+    fs.renameSync(tmpFile, dbFile);
+  } catch {
+    // Preserve state in globalForDb.__zadatkomatMemDb even if disk is read-only
   }
-  const tmpFile = `${DB_FILE}.tmp`;
-  fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf-8');
-  fs.renameSync(tmpFile, DB_FILE);
 }
 
 export function toSafeStudio(studio: Studio): Studio {

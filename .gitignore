@@ -32,3 +32,6 @@ next-env.d.ts
 
 # local runtime database (auto-seeded by src/lib/db.ts)
 /data/
+
+# netlify local link metadata
+.netlify
