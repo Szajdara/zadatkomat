@@ -42,8 +42,8 @@ function resolveDataDir(): string {
   }
   const localDir = path.join(process.cwd(), 'data');
   try {
-    if (!fs.existsSync(localDir)) {
-      fs.mkdirSync(localDir, { recursive: true });
+    if (!fs.existsSync(/*turbopackIgnore: true*/ localDir)) {
+      fs.mkdirSync(/*turbopackIgnore: true*/ localDir, { recursive: true });
     }
     return localDir;
   } catch {
@@ -428,20 +428,20 @@ function normalizeDatabase(rawDb: DatabaseState): DatabaseState {
 export function getDb(): DatabaseState {
   const { dataDir, dbFile } = getDbFilePath();
   try {
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
+    if (!fs.existsSync(/*turbopackIgnore: true*/ dataDir)) {
+      fs.mkdirSync(/*turbopackIgnore: true*/ dataDir, { recursive: true });
     }
-    if (!fs.existsSync(dbFile)) {
+    if (!fs.existsSync(/*turbopackIgnore: true*/ dbFile)) {
       const seed = globalForDb.__zadatkomatMemDb ?? createSeedDatabase();
       globalForDb.__zadatkomatMemDb = seed;
       try {
-        fs.writeFileSync(dbFile, JSON.stringify(seed, null, 2), 'utf-8');
+        fs.writeFileSync(/*turbopackIgnore: true*/ dbFile, JSON.stringify(seed, null, 2), 'utf-8');
       } catch {
         // Fallback purely to in-memory seed if filesystem is read-only
       }
       return seed;
     }
-    const raw = fs.readFileSync(dbFile, 'utf-8');
+    const raw = fs.readFileSync(/*turbopackIgnore: true*/ dbFile, 'utf-8');
     const parsed = JSON.parse(raw) as DatabaseState;
     if (!parsed.studios || !parsed.bookings || !parsed.waitlist) {
       throw new Error('Malformed db.json');
@@ -453,8 +453,8 @@ export function getDb(): DatabaseState {
     const fallback = globalForDb.__zadatkomatMemDb ?? createSeedDatabase();
     globalForDb.__zadatkomatMemDb = fallback;
     try {
-      fs.mkdirSync(dataDir, { recursive: true });
-      fs.writeFileSync(dbFile, JSON.stringify(fallback, null, 2), 'utf-8');
+      fs.mkdirSync(/*turbopackIgnore: true*/ dataDir, { recursive: true });
+      fs.writeFileSync(/*turbopackIgnore: true*/ dbFile, JSON.stringify(fallback, null, 2), 'utf-8');
     } catch {
       // Ignore write error on read-only serverless container
     }
@@ -466,12 +466,12 @@ export function saveDb(state: DatabaseState): void {
   globalForDb.__zadatkomatMemDb = state;
   const { dataDir, dbFile } = getDbFilePath();
   try {
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
+    if (!fs.existsSync(/*turbopackIgnore: true*/ dataDir)) {
+      fs.mkdirSync(/*turbopackIgnore: true*/ dataDir, { recursive: true });
     }
     const tmpFile = `${dbFile}.tmp`;
-    fs.writeFileSync(tmpFile, JSON.stringify(state, null, 2), 'utf-8');
-    fs.renameSync(tmpFile, dbFile);
+    fs.writeFileSync(/*turbopackIgnore: true*/ tmpFile, JSON.stringify(state, null, 2), 'utf-8');
+    fs.renameSync(/*turbopackIgnore: true*/ tmpFile, /*turbopackIgnore: true*/ dbFile);
   } catch {
     // Preserve state in globalForDb.__zadatkomatMemDb even if disk is read-only
   }
